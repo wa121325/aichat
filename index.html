@@ -77,33 +77,6 @@
   <div class="dot" id="status-dot"></div>
   <div class="logo">AI Gateway</div>
   <div class="topbar-right">
-    <select id="model-sel" onchange="onModelChange()">
-      <option value="auto" selected>🤖 自动选择</option>
-      <optgroup label="OpenRouter（主力）">
-        <option value="gemma-4-31b">Gemma 4 31B</option>
-        <option value="gemma-4-26b">Gemma 4 26B</option>
-        <option value="deepseek-r1">DeepSeek R1</option>
-        <option value="qwen3-80b">Qwen3 80B</option>
-        <option value="nemotron-120b">Nemotron 120B</option>
-        <option value="gpt-oss-120b">GPT OSS 120B</option>
-        <option value="glm-4.5-air">GLM 4.5 Air</option>
-        <option value="minimax-m2.5">MiniMax M2.5</option>
-      </optgroup>
-      <optgroup label="Google AI Studio">
-        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-      </optgroup>
-      <optgroup label="Groq">
-        <option value="llama-3.3-70b">Llama 3.3 70B</option>
-        <option value="gemma2-9b">Gemma 2 9B</option>
-      </optgroup>
-      <optgroup label="Cloudflare">
-        <option value="qwen2.5-72b">Qwen 2.5 72B</option>
-      </optgroup>
-      <optgroup label="Hugging Face">
-        <option value="mistral-7b-hf">Mistral 7B</option>
-      </optgroup>
-    </select>
     <button class="tbtn" onclick="clearChat()">清空</button>
   </div>
 </div>
@@ -111,11 +84,11 @@
 <div class="usage" id="usage-bar"></div>
 
 <div class="toolbar">
-  <button class="tbtn on" onclick="setMode('chat',this)">💬 对话</button>
-  <button class="tbtn" onclick="setMode('translate',this)">🌐 翻译</button>
-  <button class="tbtn" onclick="setMode('code',this)">💻 代码</button>
-  <button class="tbtn" onclick="setMode('summary',this)">📝 总结</button>
-  <button class="tbtn" onclick="setMode('polish',this)">✨ 润色</button>
+  <button class="tbtn on" data-mode="chat" onclick="setMode('chat')">💬 对话</button>
+  <button class="tbtn" data-mode="translate" onclick="setMode('translate')">🌐 翻译</button>
+  <button class="tbtn" data-mode="code" onclick="setMode('code')">💻 代码</button>
+  <button class="tbtn" data-mode="summary" onclick="setMode('summary')">📝 总结</button>
+  <button class="tbtn" data-mode="polish" onclick="setMode('polish')">✨ 润色</button>
 </div>
 
 <div class="msgs" id="msgs">
@@ -124,7 +97,7 @@
       <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
     </svg>
     <h2>AI Gateway 已就绪</h2>
-    <p>接入 5 个平台 · 多个免费模型<br>默认自动选择可用模型</p>
+    <p>智能路由已启用<br>直接输入即可开始对话</p>
   </div>
 </div>
 
@@ -155,6 +128,7 @@ const PROVIDERS = {
 };
 const PROVIDER_COLORS = {Auto:"#888",OpenRouter:"#534AB7",Google:"#1D9E75",Groq:"#D85A30",Cloudflare:"#378ADD",HuggingFace:"#BA7517"};
 const USAGE = {Auto:0,OpenRouter:0,Google:0,Groq:0,Cloudflare:0,HuggingFace:0};
+const CACHE_KEY = "ai-gateway-chat-cache-v1";
 
 const MODES = {
   chat:     {sys:"你是一个有帮助的AI助手，回答简洁清晰。"},
@@ -171,6 +145,56 @@ let currentModel = "auto";
 
 document.getElementById("api-url-display").textContent = API_BASE;
 
+function saveCache(){
+  try{
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      history,
+      mode,
+      currentModel,
+      usage: USAGE,
+      savedAt: Date.now(),
+    }));
+  } catch(e){
+    console.warn("保存本地缓存失败", e);
+  }
+}
+
+function loadCache(){
+  try{
+    const raw = localStorage.getItem(CACHE_KEY);
+    if(!raw) return;
+    const cache = JSON.parse(raw);
+    if(Array.isArray(cache.history)){
+      history = cache.history.filter(msg =>
+        msg && ["user", "assistant"].includes(msg.role) && typeof msg.content === "string"
+      );
+    }
+    if(cache.mode && MODES[cache.mode]) mode = cache.mode;
+    if(typeof cache.currentModel === "string") currentModel = cache.currentModel;
+    if(cache.usage && typeof cache.usage === "object"){
+      Object.keys(USAGE).forEach(key => {
+        if(Number.isFinite(cache.usage[key])) USAGE[key] = cache.usage[key];
+      });
+    }
+  } catch(e){
+    console.warn("读取本地缓存失败", e);
+  }
+}
+
+function restoreChat(){
+  if(!history.length) return;
+  document.getElementById("msgs").innerHTML = "";
+  history.forEach(msg => {
+    addMsg(msg.role, msg.content, "", msg.role === "assistant" ? "cached" : "");
+  });
+}
+
+function updateModeUI(){
+  document.querySelectorAll(".toolbar .tbtn").forEach(btn=>{
+    btn.classList.toggle("on", btn.getAttribute("data-mode") === mode);
+  });
+}
+
 function updateUsageBar(){
   document.getElementById("usage-bar").innerHTML =
     Object.entries(PROVIDER_COLORS).map(([p, color])=>{
@@ -178,14 +202,10 @@ function updateUsageBar(){
     }).join("");
 }
 
-function onModelChange(){
-  currentModel = document.getElementById("model-sel").value;
-}
-
-function setMode(m, el){
+function setMode(m){
   mode = m;
-  document.querySelectorAll(".tbtn").forEach(b=>b.classList.remove("on"));
-  el.classList.add("on");
+  updateModeUI();
+  saveCache();
 }
 
 function resize(){
@@ -217,7 +237,7 @@ function addMsg(role, text, model, provider){
   if(provider){
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = model + " · " + provider;
+    meta.textContent = "AI 回复";
     right.appendChild(meta);
   }
   div.appendChild(av);
@@ -257,6 +277,7 @@ async function send(){
   inp.value = ""; resize();
   addMsg("user", text, "", "");
   history.push({role:"user", content:text});
+  saveCache();
   busy = true;
   document.getElementById("send-btn").disabled = true;
   showThinking();
@@ -293,6 +314,7 @@ async function send(){
     history.push({role:"assistant", content:reply});
     addMsg("ai", reply, actualModel, actualProvider);
     updateUsageBar();
+    saveCache();
     document.getElementById("status-dot").className = "dot";
   } catch(e){
     hideThinking();
@@ -305,13 +327,17 @@ async function send(){
 
 function clearChat(){
   history = [];
+  localStorage.removeItem(CACHE_KEY);
   document.getElementById("msgs").innerHTML = `<div class="welcome" id="welcome">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
       <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
     </svg>
-    <h2>已清空对话</h2><p>选择模型，开始新对话</p></div>`;
+    <h2>已清空对话</h2><p>开始新对话</p></div>`;
 }
 
+loadCache();
+updateModeUI();
+restoreChat();
 updateUsageBar();
 </script>
 </body>
