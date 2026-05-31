@@ -26,8 +26,6 @@
   .dot{width:7px;height:7px;border-radius:50%;background:#1D9E75;margin-right:2px;flex-shrink:0}
   .dot.red{background:#E24B4A}
   .topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
-  select{font-size:13px;padding:5px 8px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;outline:none;max-width:180px}
-  select:hover{border-color:var(--accent)}
   .toolbar{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
   .tbtn{font-size:12px;padding:4px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);cursor:pointer;transition:all .15s}
   .tbtn:hover{background:var(--bg3);color:var(--text)}
@@ -41,8 +39,6 @@
   .av-u{background:#E1F5EE;color:#0F6E56}
   .bubble{padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.65;border:1px solid var(--border);background:var(--bg);color:var(--text);white-space:pre-wrap;word-break:break-word;word-wrap:break-word;overflow-wrap:break-word;min-width:0}
   .msg.user .bubble{background:var(--bg2)}
-  .meta{font-size:11px;color:var(--text3);margin-top:4px;padding:0 2px}
-  .msg.user .meta{text-align:right}
   .thinking-row{display:flex;gap:10px;align-items:center}
   .dots{display:flex;gap:4px}
   .dots span{width:6px;height:6px;border-radius:50%;background:var(--border2);animation:blink 1.2s infinite}
@@ -162,7 +158,7 @@ function restoreChat(){
   if(!history.length) return;
   document.getElementById("msgs").innerHTML = "";
   history.forEach(msg => {
-    addMsg(msg.role, msg.content, "", msg.role === "assistant" ? "cached" : "");
+    addMsg(msg.role, msg.content);
   });
 }
 
@@ -189,7 +185,7 @@ function onKey(e){
   if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); }
 }
 
-function addMsg(role, text, model, provider){
+function addMsg(role, text){
   const msgs = document.getElementById("msgs");
   const w = document.getElementById("welcome");
   if(w) w.remove();
@@ -204,12 +200,6 @@ function addMsg(role, text, model, provider){
   bubble.className = "bubble";
   bubble.innerHTML = renderMarkdown(text);
   right.appendChild(bubble);
-  if(provider){
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = "AI 回复";
-    right.appendChild(meta);
-  }
   div.appendChild(av);
   div.appendChild(right);
   msgs.appendChild(div);
@@ -245,7 +235,7 @@ async function send(){
   const text = inp.value.trim();
   if(!text) return;
   inp.value = ""; resize();
-  addMsg("user", text, "", "");
+  addMsg("user", text);
   history.push({role:"user", content:text});
   saveCache();
   busy = true;
@@ -279,12 +269,12 @@ async function send(){
     const reply = data.choices[0].message.content;
     hideThinking();
     history.push({role:"assistant", content:reply});
-    addMsg("ai", reply, "", "assistant");
+    addMsg("ai", reply);
     saveCache();
     document.getElementById("status-dot").className = "dot";
   } catch(e){
     hideThinking();
-    addMsg("ai", `⚠️ 请求失败：${e.message}\n\n请检查后端是否运行，或 API Key 是否配置正确。`, "", "");
+    addMsg("ai", `⚠️ 请求失败：${e.message}\n\n请检查后端是否运行，或 API Key 是否配置正确。`);
     document.getElementById("status-dot").className = "dot red";
   }
   busy = false;
