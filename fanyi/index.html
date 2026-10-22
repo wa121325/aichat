@@ -3,317 +3,259 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>AI 语音翻译</title>
+<title>AI 语音对话</title>
 <style>
-  :root { --bg:#f6f6f4; --fg:#1a1a1a; --muted:#888; --card:#fff; --me:#2563eb; --other:#16a34a; --line:#e4e4e0; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#141414; --fg:#eee; --muted:#888; --card:#1f1f1f; --line:#2c2c2c; } }
-  * { box-sizing: border-box; }
+  :root { --bg:#f6f6f4; --fg:#1a1a1a; --muted:#888; --card:#fff; --line:#e4e4e0; --accent:#2563eb; --user:#e8efff; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#141414; --fg:#eee; --card:#1f1f1f; --line:#2c2c2c; --user:#1d2a44; } }
+  * { box-sizing:border-box; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
-    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif; }
   body { display:flex; flex-direction:column; max-width:640px; margin:0 auto; }
-  header { display:flex; gap:8px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); }
-  select { flex:1; min-width:0; font-size:16px; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
-  .icon { border:none; background:none; font-size:20px; color:var(--muted); cursor:pointer; padding:4px; }
-  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
-  .msg { max-width:85%; background:var(--card); border-radius:14px; padding:10px 14px; border:1px solid var(--line); }
-  .msg.me { align-self:flex-end; border-color:var(--me); }
-  .msg.other { align-self:flex-start; border-color:var(--other); }
-  .src { font-size:14px; color:var(--muted); }
-  .dst { font-size:20px; margin-top:4px; line-height:1.4; cursor:pointer; }
-  .dst::after { content:" 🔊"; font-size:14px; }
-  .tag { font-size:11px; color:var(--muted); margin-top:4px; }
-  .hint { text-align:center; color:var(--muted); font-size:14px; margin:auto; line-height:1.8; }
-  #live { min-height:24px; padding:0 16px 6px; color:var(--muted); font-size:15px; text-align:center; }
-  .inputrow { padding:0 16px; }
-  #txt { width:100%; font-size:17px; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--fg); resize:none; font-family:inherit; }
-  footer { display:flex; gap:12px; padding:12px 16px 20px; }
-  footer button { flex:1; font-size:18px; padding:18px 0; border:none; border-radius:14px; color:#fff; cursor:pointer; user-select:none; -webkit-user-select:none; }
-  #btnGo { background:var(--me); font-size:22px; padding:22px 0; }
-  .lbl { font-size:16px; white-space:nowrap; }
-  footer button.on { animation: pulse 1s infinite; }
-  @keyframes pulse { 50% { opacity:.6; } }
+  header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; }
+  header b { font-size:17px; }
+  .icon { border:none; background:none; font-size:22px; color:var(--muted); cursor:pointer; padding:4px 6px; }
+  #log { flex:1; overflow-y:auto; padding:8px 16px; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:85%; padding:10px 14px; border-radius:16px; line-height:1.5; font-size:17px; white-space:pre-wrap; }
+  .msg.user { align-self:flex-end; background:var(--user); }
+  .msg.ai { align-self:flex-start; background:var(--card); border:1px solid var(--line); cursor:pointer; }
+  .hint { margin:auto; text-align:center; color:var(--muted); line-height:1.9; font-size:15px; }
+  #status { text-align:center; color:var(--muted); min-height:22px; font-size:15px; padding:6px 16px; }
+  .center { display:flex; justify-content:center; padding:8px 0 28px; }
+  #orb { width:110px; height:110px; border-radius:50%; border:none; background:var(--accent); color:#fff;
+    font-size:40px; cursor:pointer; box-shadow:0 6px 24px rgba(37,99,235,.35); }
+  #orb.listen { animation:breathe 1.4s infinite; }
+  #orb.think { background:#9ca3af; animation:breathe .5s infinite; }
+  #orb.speak { background:#16a34a; animation:breathe .8s infinite; }
+  @keyframes breathe { 50% { transform:scale(1.08); } }
+  #panel { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:flex-end; justify-content:center; }
+  #panel.show { display:flex; }
+  .sheet { background:var(--card); width:100%; max-width:640px; border-radius:18px 18px 0 0; padding:20px 16px 28px; }
+  .sheet h3 { margin:0 0 12px; }
+  .sheet label { display:block; font-size:13px; color:var(--muted); margin:12px 0 4px; }
+  .sheet input, .sheet textarea { width:100%; font-size:16px; padding:10px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font-family:inherit; }
+  .sheet .row { display:flex; gap:10px; margin-top:18px; }
+  .sheet button { flex:1; font-size:16px; padding:12px; border-radius:10px; border:none; cursor:pointer; }
+  .sheet .ok { background:var(--accent); color:#fff; }
+  .sheet .note { font-size:13px; color:var(--muted); margin-top:10px; line-height:1.6; }
+  .sheet a { color:var(--accent); }
 </style>
 </head>
 <body>
 <header>
-  <span class="lbl">中文 ⇄</span>
-  <select id="otherLang" aria-label="外语"></select>
-  <button class="icon" id="ttsBtn" title="朗读开关">🔊</button>
-  <button class="icon" id="setBtn" title="设置 AI 接口">⚙</button>
+  <button class="icon" id="clearBtn" title="新对话">🗑</button>
+  <b>AI 语音对话</b>
+  <button class="icon" id="setBtn" title="设置">⚙</button>
 </header>
-<div id="log"><div class="hint" id="hint">按下面的🎤说话<br>说中文翻成外语，说外语翻成中文<br>翻译完自动读出来</div></div>
-<div id="live"></div>
-<div class="inputrow">
-  <textarea id="txt" rows="2" placeholder="安卓手机：点这里用输入法的🎤说话，再点下面按钮"></textarea>
+<div id="log"><div class="hint" id="hint">点下面的圆按钮开始说话<br>说完停一下，AI 会用语音回答<br>回答完会自动继续听你说<br>再点一下按钮结束对话</div></div>
+<div id="status"></div>
+<div class="center"><button id="orb">🎤</button></div>
+
+<div id="panel">
+  <div class="sheet">
+    <h3>设置</h3>
+    <label>API Key（必填）</label>
+    <input id="kKey" type="password" placeholder="sk-...">
+    <label>接口地址</label>
+    <input id="kUrl">
+    <label>对话模型</label>
+    <input id="kModel">
+    <label>AI 的角色（可以不改）</label>
+    <textarea id="kSys" rows="3"></textarea>
+    <div class="note">默认用 <a href="https://cloud.siliconflow.cn/account/ak" target="_blank">硅基流动</a>（国内可直接访问，注册送额度）：在那里创建 API Key 粘贴进来就行。Key 只保存在你这台手机的浏览器里。</div>
+    <div class="row"><button id="kCancel">取消</button><button class="ok" id="kSave">保存</button></div>
+  </div>
 </div>
-<footer>
-  <button id="btnGo">🎤 点我说话</button>
-</footer>
-<audio id="player" preload="none"></audio>
+
+<audio id="player" playsinline></audio>
 
 <script>
-// ====== AI 接口（和 aichat 用的是同一个网关，可点 ⚙ 修改）======
-const DEFAULT_API = "https://george-promoting-nationally-vary.trycloudflare.com";
-const DEFAULT_KEY = "mindflow2026";
-
-const LANGS = [
-  ["zh-CN","中文"],["en-US","English"],["ja-JP","日本語"],["ko-KR","한국어"],
-  ["fr-FR","Français"],["de-DE","Deutsch"],["es-ES","Español"],["ru-RU","Русский"],
-  ["th-TH","ไทย"],["vi-VN","Tiếng Việt"],["id-ID","Bahasa Indonesia"],["ar-SA","العربية"],
-  ["it-IT","Italiano"],["pt-BR","Português"],["zh-TW","繁體中文"]
-];
-const NAME = Object.fromEntries(LANGS);
+const DEF = {
+  url: "https://api.siliconflow.cn/v1",
+  model: "Qwen/Qwen2.5-7B-Instruct",
+  asr: "FunAudioLLM/SenseVoiceSmall",
+  tts: "FunAudioLLM/CosyVoice2-0.5B",
+  voice: "FunAudioLLM/CosyVoice2-0.5B:anna",
+  sys: "你是一个友好的语音助手。用户是在用语音和你说话，你的回答会被读出来。所以：回答要口语化、简短（一般不超过三句话），不要用列表、表格、markdown 符号和表情。用户说什么语言就用什么语言回答。用户要你翻译时，只说出译文。"
+};
 const $ = id => document.getElementById(id);
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
+let cfg = Object.assign({ key: "" }, DEF, store.get("voicecfg", {}));
 
-const otherLang = $("otherLang");
-for (const [v,n] of LANGS) if (v !== "zh-CN") otherLang.add(new Option(n, v));
-otherLang.value = store.get("other", "en-US");
-otherLang.onchange = () => store.set("other", otherLang.value);
-// 判断是不是中文（有汉字、且没有日文假名/韩文）
-const isChinese = t => /[一-鿿]/.test(t) && !/[぀-ヿ가-힯]/.test(t);
-
-let ttsOn = store.get("tts", true);
-const drawTts = () => $("ttsBtn").textContent = ttsOn ? "🔊" : "🔇";
-drawTts();
-$("ttsBtn").onclick = () => { ttsOn = !ttsOn; store.set("tts", ttsOn); drawTts(); if (!ttsOn) stopSpeak(); };
-
-let api = store.get("api", { url: DEFAULT_API, key: DEFAULT_KEY });
-$("setBtn").onclick = () => {
-  const url = prompt("AI 接口地址（OpenAI 兼容，留空恢复默认）", api.url);
-  if (url === null) return;
-  const key = prompt("接口密钥 Key", api.key);
-  api = { url: (url.trim() || DEFAULT_API).replace(/\/+$/, ""), key: key === null ? api.key : key.trim() };
-  if (!url.trim()) api.key = DEFAULT_KEY;
-  store.set("api", api);
+// ---------- 设置 ----------
+function openSettings() {
+  $("kKey").value = cfg.key; $("kUrl").value = cfg.url; $("kModel").value = cfg.model; $("kSys").value = cfg.sys;
+  $("panel").classList.add("show");
+}
+$("setBtn").onclick = openSettings;
+$("kCancel").onclick = () => $("panel").classList.remove("show");
+$("kSave").onclick = () => {
+  cfg.key = $("kKey").value.trim();
+  cfg.url = ($("kUrl").value.trim() || DEF.url).replace(/\/+$/, "");
+  cfg.model = $("kModel").value.trim() || DEF.model;
+  cfg.sys = $("kSys").value.trim() || DEF.sys;
+  store.set("voicecfg", cfg);
+  $("panel").classList.remove("show");
+  setStatus(cfg.key ? "已保存，点按钮开始说话" : "还没填 API Key");
 };
 
-// ====== 翻译：先用 AI 大模型，失败自动换普通机翻 ======
-function withTimeout(ms) { const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal; }
-
-async function aiTranslate(text, from, to) {
-  const r = await fetch(api.url + "/v1/chat/completions", {
-    method: "POST", signal: withTimeout(12000),
-    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + api.key },
-    body: JSON.stringify({
-      model: "auto", temperature: 0.3, max_tokens: 800,
-      messages: [
-        { role: "system", content: `你是同声传译。把用户说的话从${NAME[from]}翻译成${NAME[to]}。这是口语对话，译文要自然、口语化、简洁。只输出译文，不要解释，不要引号，不要拼音。` },
-        { role: "user", content: text }
-      ]
-    })
-  });
-  if (!r.ok) throw new Error(r.status);
-  const j = await r.json();
-  let out = j.choices[0].message.content || "";
-  out = out.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
-  if (!out) throw new Error("empty");
-  return out;
-}
-
-const short = l => l.startsWith("zh") ? l : l.split("-")[0];
-async function mtTranslate(text, from, to) {
-  try {
-    const u = `https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&sl=${short(from)}&tl=${short(to)}&q=${encodeURIComponent(text)}`;
-    const j = await (await fetch(u, { signal: withTimeout(4000) })).json();
-    return j[0].map(x => x[0]).join("");
-  } catch {
-    const u = `https://api.mymemory.translated.net/get?langpair=${from}|${to}&q=${encodeURIComponent(text)}`;
-    const j = await (await fetch(u, { signal: withTimeout(8000) })).json();
-    return j.responseData.translatedText;
-  }
-}
-
-async function translate(text, from, to) {
-  try { return { text: await aiTranslate(text, from, to), by: "AI 翻译" }; }
-  catch (e) { console.warn("AI 失败，改用机翻", e); return { text: await mtTranslate(text, from, to), by: "机器翻译（AI 接口暂时连不上）" }; }
-}
-
-// ====== 朗读：有系统语音就用系统的，没有就用在线语音（国内可用）======
-const player = $("player");
-let voices = [];
-const loadVoices = () => { try { voices = speechSynthesis.getVoices(); } catch {} };
-if (window.speechSynthesis) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
-const hasVoice = lang => voices.some(v => v.lang.replace("_","-").toLowerCase().startsWith(short(lang).toLowerCase().split("-")[0]));
-
-// 手机浏览器要求声音必须由点击触发：点按钮时先“解锁”播放器
-function unlockAudio() {
-  try { player.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="; player.play().catch(() => {}); } catch {}
-}
-function stopSpeak() { try { speechSynthesis.cancel(); } catch {} try { player.pause(); } catch {} }
-
-const BAIDU = { "zh-CN":"zh","zh-TW":"cht","en-US":"en","ja-JP":"jp","ko-KR":"kor","fr-FR":"fra","de-DE":"de","es-ES":"spa","ru-RU":"ru","th-TH":"th","vi-VN":"vie","ar-SA":"ara","it-IT":"it","pt-BR":"pt","id-ID":"id" };
-const YOUDAO = { "en-US":"eng","ja-JP":"jap","ko-KR":"ko","fr-FR":"fr","zh-CN":"zh" };
-function onlineUrls(text, lang) {
-  const q = encodeURIComponent(text.slice(0, 300));
-  const list = [];
-  if (YOUDAO[lang]) list.push(`https://dict.youdao.com/dictvoice?audio=${q}&le=${YOUDAO[lang]}`);
-  if (BAIDU[lang]) list.push(`https://fanyi.baidu.com/gettts?lan=${BAIDU[lang]}&text=${q}&spd=5&source=web`);
-  list.push(`https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=${short(lang)}&q=${q}`);
-  return list;
-}
-function playOnline(text, lang) {
-  const urls = onlineUrls(text, lang); let i = 0;
-  const next = () => {
-    if (i >= urls.length) { $("live").textContent = "朗读失败：网络语音连不上"; return; }
-    player.onerror = next;
-    player.src = urls[i++];
-    player.play().catch(() => {});
-  };
-  next();
-}
-function speak(text, lang) {
-  if (!ttsOn) return;
-  stopSpeak();
-  if (window.speechSynthesis && hasVoice(lang)) {
-    try {
-      const u = new SpeechSynthesisUtterance(text); u.lang = lang;
-      u.voice = voices.find(v => v.lang.replace("_","-") === lang) || voices.find(v => v.lang.replace("_","-").toLowerCase().startsWith(short(lang).toLowerCase().split("-")[0]));
-      let started = false;
-      u.onstart = () => started = true;
-      u.onerror = () => { if (!started) playOnline(text, lang); };
-      speechSynthesis.speak(u);
-      setTimeout(() => { if (!started && !speechSynthesis.speaking) { speechSynthesis.cancel(); playOnline(text, lang); } }, 1500);
-      return;
-    } catch {}
-  }
-  playOnline(text, lang);
-}
-
-// ====== 界面 ======
-function addMsg(src, zh) {
+// ---------- 对话记录 ----------
+const HINT = $("log").innerHTML;
+let history = store.get("voicehist", []);
+function addBubble(role, text) {
   $("hint")?.remove();
-  const d = document.createElement("div"); d.className = "msg " + (zh ? "me" : "other");
-  d.innerHTML = `<div class="src"></div><div class="dst">AI 翻译中…</div><div class="tag"></div>`;
-  d.querySelector(".src").textContent = src;
+  const d = document.createElement("div");
+  d.className = "msg " + (role === "user" ? "user" : "ai");
+  d.textContent = text;
+  if (role !== "user") d.onclick = () => { unlockAudio(); stopAll(); speak(text); };
   $("log").appendChild(d); $("log").scrollTop = 1e9;
-  return d;
+}
+for (const m of history) addBubble(m.role, m.content);
+$("clearBtn").onclick = () => { stopConversation(""); history = []; store.set("voicehist", history); $("log").innerHTML = HINT; };
+
+const setStatus = t => $("status").textContent = t;
+const orb = $("orb");
+function setOrb(s) { orb.className = s; orb.textContent = { listen:"🎤", think:"…", speak:"🔊" }[s] || "🎤"; }
+
+// ---------- 录音，静音 1.2 秒自动判断说完 ----------
+let stream = null, ctx = null, analyser = null, mediaRec = null, active = false, state = "";
+async function ensureMic() {
+  if (stream) return;
+  stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+}
+function level() {
+  const a = new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(a);
+  let s = 0; for (const v of a) s += (v - 128) ** 2; return Math.sqrt(s / a.length);
 }
 
-// 自动判断方向：中文 → 外语，外语 → 中文
-async function doTranslate(text) {
-  const zh = isChinese(text);
-  const from = zh ? "zh-CN" : otherLang.value, to = zh ? otherLang.value : "zh-CN";
-  nextListen = zh ? otherLang.value : "zh-CN";   // 对话轮流：下次听另一种语言
-  const d = addMsg(text, zh);
-  try {
-    const r = await translate(text, from, to);
-    const dst = d.querySelector(".dst"); dst.textContent = r.text;
-    d.querySelector(".tag").textContent = r.by;
-    dst.onclick = () => { unlockAudio(); speak(r.text, to); };
-    $("log").scrollTop = 1e9;
-    speak(r.text, to);
-  } catch { d.querySelector(".dst").textContent = "翻译失败，请检查网络"; }
-}
-
-// ====== 语音识别 ======
-// 方式1：浏览器自带识别（iPhone Safari / 电脑 Edge）
-// 方式2：网页自己录音 → 发给 AI 网关的 Whisper 识别（安卓手机没有语音引擎时）
-// 方式3：都不行 → 用输入法的🎤
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-const btn = $("btnGo");
-let mode = store.get("mode", SR ? "sr" : "rec");   // sr | rec | kb
-let rec = null, mediaRec = null, nextListen = null;
-
-function setMode(m, msg) { mode = m; if (m !== "kb") store.set("mode", m); if (msg) $("live").textContent = msg; }
-function idle() { btn.classList.remove("on"); btn.textContent = "🎤 点我说话"; rec = null; mediaRec = null; }
-function busy(t) { btn.classList.add("on"); btn.textContent = t; }
-function useKeyboard(msg) {
-  setMode("kb", msg || "点上面输入框，用输入法的🎤说话，再点按钮翻译");
-  $("txt").focus();
-}
-
-btn.onclick = () => {
-  unlockAudio();
-  if (rec) { rec.stop(); return; }
-  if (mediaRec) { mediaRec.stop(); return; }
-  const typed = $("txt").value.trim();
-  if (typed) { $("txt").value = ""; $("live").textContent = ""; doTranslate(typed); return; }
-  stopSpeak();
-  if (mode === "sr") startSR();
-  else if (mode === "rec") startRecord();
-  else useKeyboard();
-};
-
-function startSR() {
-  const lang = nextListen || otherLang.value;
-  rec = new SR(); rec.lang = lang; rec.interimResults = true; rec.continuous = false;
-  busy("⏹ 说完点我");
-  $("live").textContent = "正在听（" + NAME[lang] + "）…";
-  let finalText = "", failed = false, alive = false;
-  rec.onstart = rec.onaudiostart = () => alive = true;
-  // 有些安卓浏览器假装支持，其实没有语音引擎：2.5 秒没反应就换成录音
-  setTimeout(() => { if (rec && !alive) { failed = true; try { rec.abort(); } catch {} idle(); setMode("rec"); startRecord(); } }, 2500);
-  rec.onresult = e => {
-    let interim = "";
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
-      else interim += e.results[i][0].transcript;
-    }
-    $("live").textContent = finalText + interim;
-  };
-  rec.onerror = e => {
-    if (e.error === "no-speech") { $("live").textContent = "没听到声音，再点一次"; nextListen = lang === "zh-CN" ? otherLang.value : "zh-CN"; return; }
-    if (e.error === "aborted" || failed) return;
-    failed = true;
-    if (e.error === "not-allowed") { $("live").textContent = "请允许使用麦克风"; return; }
-    idle(); setMode("rec"); startRecord();
-  };
-  rec.onend = () => {
-    if (failed && mediaRec) return;
-    idle();
-    const text = finalText.trim(); if (!text || failed) return;
-    $("live").textContent = "";
-    doTranslate(text);
-  };
-  try { rec.start(); } catch { idle(); setMode("rec"); startRecord(); }
-}
-
-async function startRecord() {
-  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { useKeyboard(); return; }
-  let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch { $("live").textContent = "请允许使用麦克风"; return; }
+function listen() {
+  if (!active) return;
+  state = "listen"; setOrb("listen"); setStatus("在听…（说完停一下）");
+  try { ctx.resume(); } catch {}
   const chunks = [];
-  mediaRec = new MediaRecorder(stream);
-  mediaRec.ondataavailable = e => e.data.size && chunks.push(e.data);
-  mediaRec.onstop = async () => {
-    stream.getTracks().forEach(t => t.stop());
-    const type = mediaRec.mimeType || "audio/webm";
-    idle();
-    const blob = new Blob(chunks, { type });
-    if (blob.size < 2000) { $("live").textContent = "太短了，再说一次"; return; }
-    $("live").textContent = "识别中…";
-    try {
-      const text = await transcribe(blob, type);
-      $("live").textContent = "";
-      if (text) doTranslate(text); else $("live").textContent = "没听清，再说一次";
-    } catch (e) {
-      console.warn(e);
-      useKeyboard("AI 网关暂时不能识别语音：先用输入框里输入法的🎤说话，再点按钮");
-    }
+  const mime = ["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg"].find(t => MediaRecorder.isTypeSupported?.(t)) || "";
+  const mr = mediaRec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  mr.ondataavailable = e => e.data.size && chunks.push(e.data);
+  let spoke = false, silentSince = 0;
+  const startedAt = Date.now();
+  const timer = setInterval(() => {
+    if (mr.state !== "recording") return clearInterval(timer);
+    const lv = level(), now = Date.now();
+    if (lv > 6) { spoke = true; silentSince = 0; }
+    else if (spoke) { silentSince ||= now; if (now - silentSince > 1200) mr.stop(); }
+    if (!spoke && now - startedAt > 15000) mr.stop();   // 15 秒没人说话
+    if (now - startedAt > 60000) mr.stop();             // 最长 60 秒
+  }, 100);
+  mr.onstop = () => {
+    clearInterval(timer);
+    if (mediaRec === mr) mediaRec = null;
+    if (!active) return;
+    if (!spoke) { stopConversation("没听到声音，点按钮再开始"); return; }
+    handleAudio(new Blob(chunks, { type: mr.mimeType || "audio/webm" }));
   };
-  mediaRec.start();
-  busy("⏹ 说完点我");
-  $("live").textContent = "正在录音，说完点按钮…";
+  mr.start(250);
 }
 
-async function transcribe(blob, type) {
-  const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
-  const fd = new FormData();
-  fd.append("file", blob, "speech." + ext);
-  fd.append("model", "whisper-large-v3");
-  const r = await fetch(api.url + "/v1/audio/transcriptions", {
-    method: "POST", body: fd, signal: withTimeout(20000),
-    headers: { "Authorization": "Bearer " + api.key }
-  });
-  if (!r.ok) throw new Error("transcribe " + r.status);
-  const j = await r.json();
-  return (j.text || "").trim();
+// ---------- 识别 → AI 回答 → 朗读 ----------
+async function api(path, opts) {
+  const r = await fetch(cfg.url + path, { ...opts, headers: { "Authorization": "Bearer " + cfg.key, ...(opts.headers || {}) } });
+  if (!r.ok) {
+    let msg = String(r.status); try { const j = await r.json(); msg += " " + (j.message || j.error?.message || ""); } catch {}
+    throw new Error(msg);
+  }
+  return r;
 }
+
+async function handleAudio(blob) {
+  state = "think"; setOrb("think"); setStatus("识别中…");
+  try {
+    const t = blob.type, ext = t.includes("mp4") ? "m4a" : t.includes("ogg") ? "ogg" : "webm";
+    const fd = new FormData(); fd.append("file", blob, "speech." + ext); fd.append("model", DEF.asr);
+    const text = ((await (await api("/audio/transcriptions", { method:"POST", body:fd })).json()).text || "").trim();
+    if (!active) return;
+    if (!text) { listen(); return; }
+    history.push({ role:"user", content:text }); addBubble("user", text);
+
+    setStatus("思考中…");
+    const r = await api("/chat/completions", {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ model: cfg.model, temperature: 0.7, max_tokens: 400,
+        messages: [{ role:"system", content: cfg.sys }, ...history.slice(-20)] })
+    });
+    let reply = (await r.json()).choices[0].message.content || "";
+    reply = reply.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/[*#`>|]/g, "").trim() || "嗯？";
+    history.push({ role:"assistant", content:reply }); store.set("voicehist", history);
+    addBubble("assistant", reply);
+    if (!active) return;
+    await speak(reply);
+    if (active) listen();             // 读完自动继续听
+  } catch (e) {
+    console.warn(e);
+    stopConversation(/401|403/.test(e.message) ? "API Key 不对，点 ⚙ 检查一下" :
+      e.message === "Failed to fetch" ? "连不上 AI 接口，检查网络或接口地址" : "出错了：" + e.message);
+  }
+}
+
+// ---------- 朗读：先用 AI 语音，失败用系统语音 ----------
+const player = $("player");
+let currentUrl = null;
+function unlockAudio() {
+  try { player.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="; player.play().catch(()=>{}); } catch {}
+  try { ctx?.resume(); } catch {}
+}
+function playUrl(url) {
+  return new Promise(res => {
+    player.onended = player.onerror = player.onpause = () => res();
+    player.src = url; player.play().catch(() => res());
+  });
+}
+function systemSpeak(text) {
+  return new Promise(res => {
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = /[一-鿿]/.test(text) ? "zh-CN" : "en-US";
+      u.onend = u.onerror = () => res(); speechSynthesis.speak(u);
+      setTimeout(() => { if (!speechSynthesis.speaking) res(); }, 2000);
+    } catch { res(); }
+  });
+}
+async function speak(text) {
+  state = "speak"; setOrb("speak"); setStatus("AI 在说话…（点按钮打断）");
+  try {
+    const r = await api("/audio/speech", {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ model: DEF.tts, voice: DEF.voice, input: text.replace(/\s+/g, " "), response_format: "mp3" })
+    });
+    if (currentUrl) URL.revokeObjectURL(currentUrl);
+    currentUrl = URL.createObjectURL(await r.blob());
+    await playUrl(currentUrl);
+  } catch (e) { console.warn("AI 语音失败，用系统朗读", e); await systemSpeak(text); }
+  if (!active) { state = ""; setOrb(""); setStatus(""); }
+}
+function stopAll() { try { player.pause(); } catch {} try { speechSynthesis.cancel(); } catch {} }
+
+// ---------- 按钮 ----------
+function stopConversation(msg) {
+  active = false; state = ""; stopAll();
+  if (mediaRec && mediaRec.state === "recording") { try { mediaRec.stop(); } catch {} }
+  setOrb(""); setStatus(msg || "");
+}
+orb.onclick = async () => {
+  if (!cfg.key) { openSettings(); return; }
+  if (active && state === "speak") { stopAll(); return; }     // 打断 AI，马上接着听
+  if (active) { stopConversation("对话已结束"); return; }
+  unlockAudio();
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { setStatus("这个浏览器不支持录音，换 Chrome / Edge / Safari 试试"); return; }
+  try { await ensureMic(); } catch { setStatus("请允许使用麦克风"); return; }
+  active = true; listen();
+};
+if (!cfg.key) setStatus("先点右上角 ⚙ 填 API Key");
 </script>
 </body>
 </html>
