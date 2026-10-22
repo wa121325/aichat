@@ -210,29 +210,43 @@ async function doTranslate(text) {
 }
 
 // ====== 语音识别 ======
+// 方式1：浏览器自带识别（iPhone Safari / 电脑 Edge）
+// 方式2：网页自己录音 → 发给 AI 网关的 Whisper 识别（安卓手机没有语音引擎时）
+// 方式3：都不行 → 用输入法的🎤
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const btn = $("btnGo");
-let rec = null, srBroken = !SR, nextListen = null;
+let mode = store.get("mode", SR ? "sr" : "rec");   // sr | rec | kb
+let rec = null, mediaRec = null, nextListen = null;
 
+function setMode(m, msg) { mode = m; if (m !== "kb") store.set("mode", m); if (msg) $("live").textContent = msg; }
+function idle() { btn.classList.remove("on"); btn.textContent = "🎤 点我说话"; rec = null; mediaRec = null; }
+function busy(t) { btn.classList.add("on"); btn.textContent = t; }
 function useKeyboard(msg) {
-  srBroken = true;
-  $("live").textContent = msg || "点上面输入框，用输入法的🎤说话，再点按钮翻译";
+  setMode("kb", msg || "点上面输入框，用输入法的🎤说话，再点按钮翻译");
   $("txt").focus();
 }
-function resetBtn() { btn.classList.remove("on"); btn.textContent = "🎤 点我说话"; rec = null; }
 
 btn.onclick = () => {
   unlockAudio();
   if (rec) { rec.stop(); return; }
+  if (mediaRec) { mediaRec.stop(); return; }
   const typed = $("txt").value.trim();
   if (typed) { $("txt").value = ""; $("live").textContent = ""; doTranslate(typed); return; }
-  if (srBroken) { useKeyboard(); return; }
   stopSpeak();
+  if (mode === "sr") startSR();
+  else if (mode === "rec") startRecord();
+  else useKeyboard();
+};
+
+function startSR() {
   const lang = nextListen || otherLang.value;
   rec = new SR(); rec.lang = lang; rec.interimResults = true; rec.continuous = false;
-  btn.classList.add("on"); btn.textContent = "⏹ 说完点我";
+  busy("⏹ 说完点我");
   $("live").textContent = "正在听（" + NAME[lang] + "）…";
-  let finalText = "", failed = false;
+  let finalText = "", failed = false, alive = false;
+  rec.onstart = rec.onaudiostart = () => alive = true;
+  // 有些安卓浏览器假装支持，其实没有语音引擎：2.5 秒没反应就换成录音
+  setTimeout(() => { if (rec && !alive) { failed = true; try { rec.abort(); } catch {} idle(); setMode("rec"); startRecord(); } }, 2500);
   rec.onresult = e => {
     let interim = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -243,19 +257,63 @@ btn.onclick = () => {
   };
   rec.onerror = e => {
     if (e.error === "no-speech") { $("live").textContent = "没听到声音，再点一次"; nextListen = lang === "zh-CN" ? otherLang.value : "zh-CN"; return; }
-    if (e.error === "aborted") return;
+    if (e.error === "aborted" || failed) return;
     failed = true;
     if (e.error === "not-allowed") { $("live").textContent = "请允许使用麦克风"; return; }
-    useKeyboard("这个浏览器不能直接识别语音：点上面输入框，用输入法的🎤说话，再点按钮");
+    idle(); setMode("rec"); startRecord();
   };
   rec.onend = () => {
-    resetBtn();
+    if (failed && mediaRec) return;
+    idle();
     const text = finalText.trim(); if (!text || failed) return;
     $("live").textContent = "";
     doTranslate(text);
   };
-  try { rec.start(); } catch { resetBtn(); useKeyboard(); }
-};
+  try { rec.start(); } catch { idle(); setMode("rec"); startRecord(); }
+}
+
+async function startRecord() {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { useKeyboard(); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { $("live").textContent = "请允许使用麦克风"; return; }
+  const chunks = [];
+  mediaRec = new MediaRecorder(stream);
+  mediaRec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  mediaRec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    const type = mediaRec.mimeType || "audio/webm";
+    idle();
+    const blob = new Blob(chunks, { type });
+    if (blob.size < 2000) { $("live").textContent = "太短了，再说一次"; return; }
+    $("live").textContent = "识别中…";
+    try {
+      const text = await transcribe(blob, type);
+      $("live").textContent = "";
+      if (text) doTranslate(text); else $("live").textContent = "没听清，再说一次";
+    } catch (e) {
+      console.warn(e);
+      useKeyboard("AI 网关暂时不能识别语音：先用输入框里输入法的🎤说话，再点按钮");
+    }
+  };
+  mediaRec.start();
+  busy("⏹ 说完点我");
+  $("live").textContent = "正在录音，说完点按钮…";
+}
+
+async function transcribe(blob, type) {
+  const ext = type.includes("mp4") ? "mp4" : type.includes("ogg") ? "ogg" : "webm";
+  const fd = new FormData();
+  fd.append("file", blob, "speech." + ext);
+  fd.append("model", "whisper-large-v3");
+  const r = await fetch(api.url + "/v1/audio/transcriptions", {
+    method: "POST", body: fd, signal: withTimeout(20000),
+    headers: { "Authorization": "Bearer " + api.key }
+  });
+  if (!r.ok) throw new Error("transcribe " + r.status);
+  const j = await r.json();
+  return (j.text || "").trim();
+}
 </script>
 </body>
 </html>
