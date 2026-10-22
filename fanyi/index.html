@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>即时翻译</title>
+<style>
+  :root { --bg:#f6f6f4; --fg:#1a1a1a; --muted:#888; --card:#fff; --me:#2563eb; --other:#16a34a; --line:#e4e4e0; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#141414; --fg:#eee; --muted:#888; --card:#1f1f1f; --line:#2c2c2c; } }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+  body { display:flex; flex-direction:column; max-width:640px; margin:0 auto; }
+  header { display:flex; gap:8px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); }
+  select { flex:1; font-size:16px; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  .swap { border:none; background:none; font-size:20px; color:var(--muted); cursor:pointer; }
+  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .msg { max-width:85%; background:var(--card); border-radius:14px; padding:10px 14px; border:1px solid var(--line); }
+  .msg.me { align-self:flex-end; border-color:var(--me); }
+  .msg.other { align-self:flex-start; border-color:var(--other); }
+  .src { font-size:14px; color:var(--muted); }
+  .dst { font-size:20px; margin-top:4px; line-height:1.4; cursor:pointer; }
+  .hint { text-align:center; color:var(--muted); font-size:14px; margin:auto; line-height:1.8; }
+  #live { min-height:24px; padding:0 16px; color:var(--muted); font-size:15px; text-align:center; }
+  footer { display:flex; gap:12px; padding:12px 16px 20px; }
+  footer button { flex:1; font-size:18px; padding:18px 0; border:none; border-radius:14px; color:#fff; cursor:pointer; user-select:none; -webkit-user-select:none; }
+  #btnMe { background:var(--me); } #btnOther { background:var(--other); }
+  footer button.on { animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity:.6; } }
+  label.tts { font-size:13px; color:var(--muted); white-space:nowrap; }
+</style>
+</head>
+<body>
+<header>
+  <select id="myLang" aria-label="我的语言"></select>
+  <button class="swap" id="swap" title="交换">⇄</button>
+  <select id="otherLang" aria-label="对方语言"></select>
+  <label class="tts"><input type="checkbox" id="tts" checked> 朗读</label>
+</header>
+<div id="log"><div class="hint" id="hint">点「我说」或「对方说」，说完自动翻译<br>点译文可以重新朗读</div></div>
+<div id="live"></div>
+<footer>
+  <button id="btnMe">🎤 我说</button>
+  <button id="btnOther">🎤 对方说</button>
+</footer>
+
+<script>
+const LANGS = [
+  ["zh-CN","中文"],["en-US","English"],["ja-JP","日本語"],["ko-KR","한국어"],
+  ["fr-FR","Français"],["de-DE","Deutsch"],["es-ES","Español"],["ru-RU","Русский"],
+  ["th-TH","ไทย"],["vi-VN","Tiếng Việt"],["id-ID","Bahasa Indonesia"],["ar-SA","العربية"],
+  ["it-IT","Italiano"],["pt-BR","Português"],["zh-TW","繁體中文"]
+];
+const $ = id => document.getElementById(id);
+const myLang = $("myLang"), otherLang = $("otherLang");
+for (const sel of [myLang, otherLang]) for (const [v,n] of LANGS) sel.add(new Option(n, v));
+const saved = (() => { try { return JSON.parse(localStorage.getItem("langs")); } catch { return null; } })();
+myLang.value = saved?.[0] || "zh-CN"; otherLang.value = saved?.[1] || "en-US";
+const save = () => { try { localStorage.setItem("langs", JSON.stringify([myLang.value, otherLang.value])); } catch {} };
+myLang.onchange = otherLang.onchange = save;
+$("swap").onclick = () => { [myLang.value, otherLang.value] = [otherLang.value, myLang.value]; save(); };
+
+// 翻译：先用 Google，失败再用 MyMemory（都是免费、无需 key）
+const short = l => l.startsWith("zh") ? l : l.split("-")[0];
+async function translate(text, from, to) {
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const u = `https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&sl=${short(from)}&tl=${short(to)}&q=${encodeURIComponent(text)}`;
+    const r = await fetch(u, { signal: ctrl.signal }); const j = await r.json();
+    return j[0].map(x => x[0]).join("");
+  } catch {
+    const u = `https://api.mymemory.translated.net/get?langpair=${from}|${to}&q=${encodeURIComponent(text)}`;
+    const j = await (await fetch(u)).json();
+    return j.responseData.translatedText;
+  } finally { clearTimeout(t); }
+}
+
+function speak(text, lang) {
+  if (!$("tts").checked || !window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text); u.lang = lang; speechSynthesis.speak(u);
+}
+
+function addMsg(who, src, lang) {
+  $("hint")?.remove();
+  const d = document.createElement("div"); d.className = "msg " + who;
+  d.innerHTML = `<div class="src"></div><div class="dst">翻译中…</div>`;
+  d.querySelector(".src").textContent = src;
+  $("log").appendChild(d); $("log").scrollTop = 1e9;
+  return d;
+}
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, activeBtn = null;
+
+function start(who) {
+  if (!SR) { alert("这个浏览器不支持语音识别，请用 Edge、Chrome 或 iPhone Safari 打开"); return; }
+  if (rec) { rec.stop(); return; }
+  const from = who === "me" ? myLang.value : otherLang.value;
+  const to   = who === "me" ? otherLang.value : myLang.value;
+  speechSynthesis?.cancel();
+  rec = new SR(); rec.lang = from; rec.interimResults = true; rec.continuous = false;
+  activeBtn = who === "me" ? $("btnMe") : $("btnOther");
+  activeBtn.classList.add("on"); activeBtn.dataset.t = activeBtn.textContent; activeBtn.textContent = "⏹ 停止";
+  let finalText = "";
+  rec.onresult = e => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    $("live").textContent = finalText + interim;
+  };
+  rec.onerror = e => {
+    $("live").textContent = e.error === "no-speech" ? "没听到声音，再试一次" :
+      e.error === "not-allowed" ? "请允许使用麦克风" :
+      e.error === "network" ? "语音识别连不上网络（国内建议用 Edge 浏览器）" : "出错了：" + e.error;
+  };
+  rec.onend = async () => {
+    activeBtn.classList.remove("on"); activeBtn.textContent = activeBtn.dataset.t; rec = null;
+    const text = finalText.trim(); if (!text) return;
+    $("live").textContent = "";
+    const d = addMsg(who, text);
+    try {
+      const out = await translate(text, from, to);
+      const dst = d.querySelector(".dst"); dst.textContent = out;
+      dst.onclick = () => speak(out, to);
+      $("log").scrollTop = 1e9;
+      speak(out, to);
+    } catch { d.querySelector(".dst").textContent = "翻译失败，请检查网络"; }
+  };
+  rec.start();
+}
+$("btnMe").onclick = () => start("me");
+$("btnOther").onclick = () => start("other");
+</script>
+</body>
+</html>
