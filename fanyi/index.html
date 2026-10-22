@@ -28,27 +28,26 @@
   #txt { width:100%; font-size:17px; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--fg); resize:none; font-family:inherit; }
   footer { display:flex; gap:12px; padding:12px 16px 20px; }
   footer button { flex:1; font-size:18px; padding:18px 0; border:none; border-radius:14px; color:#fff; cursor:pointer; user-select:none; -webkit-user-select:none; }
-  #btnMe { background:var(--me); } #btnOther { background:var(--other); }
+  #btnGo { background:var(--me); font-size:22px; padding:22px 0; }
+  .lbl { font-size:16px; white-space:nowrap; }
   footer button.on { animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity:.6; } }
 </style>
 </head>
 <body>
 <header>
-  <select id="myLang" aria-label="我的语言"></select>
-  <button class="icon" id="swap" title="交换">⇄</button>
-  <select id="otherLang" aria-label="对方语言"></select>
+  <span class="lbl">中文 ⇄</span>
+  <select id="otherLang" aria-label="外语"></select>
   <button class="icon" id="ttsBtn" title="朗读开关">🔊</button>
   <button class="icon" id="setBtn" title="设置 AI 接口">⚙</button>
 </header>
-<div id="log"><div class="hint" id="hint">点「我说」或「对方说」开始说话<br>AI 翻译后会自动读出来<br>点译文可以再听一遍</div></div>
+<div id="log"><div class="hint" id="hint">按下面的🎤说话<br>说中文翻成外语，说外语翻成中文<br>翻译完自动读出来</div></div>
 <div id="live"></div>
 <div class="inputrow">
-  <textarea id="txt" rows="2" placeholder="安卓手机：点这里用输入法的🎤语音输入，再点下面按钮"></textarea>
+  <textarea id="txt" rows="2" placeholder="安卓手机：点这里用输入法的🎤说话，再点下面按钮"></textarea>
 </div>
 <footer>
-  <button id="btnMe">🎤 我说</button>
-  <button id="btnOther">🎤 对方说</button>
+  <button id="btnGo">🎤 点我说话</button>
 </footer>
 <audio id="player" preload="none"></audio>
 
@@ -70,13 +69,12 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 };
 
-const myLang = $("myLang"), otherLang = $("otherLang");
-for (const sel of [myLang, otherLang]) for (const [v,n] of LANGS) sel.add(new Option(n, v));
-const saved = store.get("langs", null);
-myLang.value = saved?.[0] || "zh-CN"; otherLang.value = saved?.[1] || "en-US";
-const saveLangs = () => store.set("langs", [myLang.value, otherLang.value]);
-myLang.onchange = otherLang.onchange = saveLangs;
-$("swap").onclick = () => { [myLang.value, otherLang.value] = [otherLang.value, myLang.value]; saveLangs(); };
+const otherLang = $("otherLang");
+for (const [v,n] of LANGS) if (v !== "zh-CN") otherLang.add(new Option(n, v));
+otherLang.value = store.get("other", "en-US");
+otherLang.onchange = () => store.set("other", otherLang.value);
+// 判断是不是中文（有汉字、且没有日文假名/韩文）
+const isChinese = t => /[一-鿿]/.test(t) && !/[぀-ヿ가-힯]/.test(t);
 
 let ttsOn = store.get("tts", true);
 const drawTts = () => $("ttsBtn").textContent = ttsOn ? "🔊" : "🔇";
@@ -186,17 +184,21 @@ function speak(text, lang) {
 }
 
 // ====== 界面 ======
-function addMsg(who, src) {
+function addMsg(src, zh) {
   $("hint")?.remove();
-  const d = document.createElement("div"); d.className = "msg " + who;
+  const d = document.createElement("div"); d.className = "msg " + (zh ? "me" : "other");
   d.innerHTML = `<div class="src"></div><div class="dst">AI 翻译中…</div><div class="tag"></div>`;
   d.querySelector(".src").textContent = src;
   $("log").appendChild(d); $("log").scrollTop = 1e9;
   return d;
 }
 
-async function doTranslate(who, text, from, to) {
-  const d = addMsg(who, text);
+// 自动判断方向：中文 → 外语，外语 → 中文
+async function doTranslate(text) {
+  const zh = isChinese(text);
+  const from = zh ? "zh-CN" : otherLang.value, to = zh ? otherLang.value : "zh-CN";
+  nextListen = zh ? otherLang.value : "zh-CN";   // 对话轮流：下次听另一种语言
+  const d = addMsg(text, zh);
   try {
     const r = await translate(text, from, to);
     const dst = d.querySelector(".dst"); dst.textContent = r.text;
@@ -209,28 +211,27 @@ async function doTranslate(who, text, from, to) {
 
 // ====== 语音识别 ======
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, activeBtn = null, srBroken = !SR;
+const btn = $("btnGo");
+let rec = null, srBroken = !SR, nextListen = null;
 
 function useKeyboard(msg) {
   srBroken = true;
-  $("live").textContent = msg || "这个浏览器不能直接语音识别：点上面输入框，用输入法的🎤说话，再点按钮";
+  $("live").textContent = msg || "点上面输入框，用输入法的🎤说话，再点按钮翻译";
   $("txt").focus();
 }
-function resetBtn() { if (activeBtn) { activeBtn.classList.remove("on"); activeBtn.textContent = activeBtn.dataset.t; } rec = null; }
+function resetBtn() { btn.classList.remove("on"); btn.textContent = "🎤 点我说话"; rec = null; }
 
-function start(who) {
+btn.onclick = () => {
   unlockAudio();
   if (rec) { rec.stop(); return; }
-  const from = who === "me" ? myLang.value : otherLang.value;
-  const to   = who === "me" ? otherLang.value : myLang.value;
   const typed = $("txt").value.trim();
-  if (typed) { $("txt").value = ""; $("live").textContent = ""; doTranslate(who, typed, from, to); return; }
+  if (typed) { $("txt").value = ""; $("live").textContent = ""; doTranslate(typed); return; }
   if (srBroken) { useKeyboard(); return; }
   stopSpeak();
-  rec = new SR(); rec.lang = from; rec.interimResults = true; rec.continuous = false;
-  activeBtn = who === "me" ? $("btnMe") : $("btnOther");
-  activeBtn.classList.add("on"); activeBtn.dataset.t = activeBtn.textContent; activeBtn.textContent = "⏹ 说完点我";
-  $("live").textContent = "请说" + NAME[from] + "…";
+  const lang = nextListen || otherLang.value;
+  rec = new SR(); rec.lang = lang; rec.interimResults = true; rec.continuous = false;
+  btn.classList.add("on"); btn.textContent = "⏹ 说完点我";
+  $("live").textContent = "正在听（" + NAME[lang] + "）…";
   let finalText = "", failed = false;
   rec.onresult = e => {
     let interim = "";
@@ -241,22 +242,20 @@ function start(who) {
     $("live").textContent = finalText + interim;
   };
   rec.onerror = e => {
-    if (e.error === "no-speech") { $("live").textContent = "没听到声音，再试一次"; return; }
+    if (e.error === "no-speech") { $("live").textContent = "没听到声音，再点一次"; nextListen = lang === "zh-CN" ? otherLang.value : "zh-CN"; return; }
     if (e.error === "aborted") return;
     failed = true;
-    if (e.error === "not-allowed") { $("live").textContent = "请允许使用麦克风（或用输入框的输入法语音）"; return; }
-    useKeyboard("语音识别用不了（" + e.error + "）：点上面输入框，用输入法的🎤说话，再点按钮");
+    if (e.error === "not-allowed") { $("live").textContent = "请允许使用麦克风"; return; }
+    useKeyboard("这个浏览器不能直接识别语音：点上面输入框，用输入法的🎤说话，再点按钮");
   };
   rec.onend = () => {
     resetBtn();
     const text = finalText.trim(); if (!text || failed) return;
     $("live").textContent = "";
-    doTranslate(who, text, from, to);
+    doTranslate(text);
   };
   try { rec.start(); } catch { resetBtn(); useKeyboard(); }
-}
-$("btnMe").onclick = () => start("me");
-$("btnOther").onclick = () => start("other");
+};
 </script>
 </body>
 </html>
