@@ -27,6 +27,8 @@
   #btnMe { background:var(--me); } #btnOther { background:var(--other); }
   footer button.on { animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity:.6; } }
+  .inputrow { padding:0 16px; }
+  #txt { width:100%; font-size:17px; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--fg); resize:none; font-family:inherit; }
   label.tts { font-size:13px; color:var(--muted); white-space:nowrap; }
 </style>
 </head>
@@ -39,6 +41,9 @@
 </header>
 <div id="log"><div class="hint" id="hint">点「我说」或「对方说」，说完自动翻译<br>点译文可以重新朗读</div></div>
 <div id="live"></div>
+<div class="inputrow">
+  <textarea id="txt" rows="2" placeholder="也可以在这里打字，或用输入法的🎤语音输入，然后点下面按钮翻译"></textarea>
+</div>
 <footer>
   <button id="btnMe">🎤 我说</button>
   <button id="btnOther">🎤 对方说</button>
@@ -77,8 +82,12 @@ async function translate(text, from, to) {
 
 function speak(text, lang) {
   if (!$("tts").checked || !window.speechSynthesis) return;
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text); u.lang = lang; speechSynthesis.speak(u);
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text); u.lang = lang;
+    u.onerror = () => {};
+    speechSynthesis.speak(u);
+  } catch {}
 }
 
 function addMsg(who, src, lang) {
@@ -93,12 +102,32 @@ function addMsg(who, src, lang) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, activeBtn = null;
 
+let srBroken = !SR;
+function useKeyboard(msg) {
+  srBroken = true;
+  $("live").textContent = msg || "这个浏览器不能直接语音识别：点上面输入框，用输入法的🎤说话，再点按钮翻译";
+  $("txt").focus();
+}
+
+async function doTranslate(who, text, from, to) {
+  const d = addMsg(who, text);
+  try {
+    const out = await translate(text, from, to);
+    const dst = d.querySelector(".dst"); dst.textContent = out;
+    dst.onclick = () => speak(out, to);
+    $("log").scrollTop = 1e9;
+    speak(out, to);
+  } catch { d.querySelector(".dst").textContent = "翻译失败，请检查网络"; }
+}
+
 function start(who) {
-  if (!SR) { alert("这个浏览器不支持语音识别，请用 Edge、Chrome 或 iPhone Safari 打开"); return; }
   if (rec) { rec.stop(); return; }
   const from = who === "me" ? myLang.value : otherLang.value;
   const to   = who === "me" ? otherLang.value : myLang.value;
-  speechSynthesis?.cancel();
+  const typed = $("txt").value.trim();
+  if (typed) { $("txt").value = ""; $("live").textContent = ""; doTranslate(who, typed, from, to); return; }
+  if (srBroken) { useKeyboard(); return; }
+  try { speechSynthesis.cancel(); } catch {}
   rec = new SR(); rec.lang = from; rec.interimResults = true; rec.continuous = false;
   activeBtn = who === "me" ? $("btnMe") : $("btnOther");
   activeBtn.classList.add("on"); activeBtn.dataset.t = activeBtn.textContent; activeBtn.textContent = "⏹ 停止";
@@ -111,25 +140,22 @@ function start(who) {
     }
     $("live").textContent = finalText + interim;
   };
+  let failed = false;
   rec.onerror = e => {
-    $("live").textContent = e.error === "no-speech" ? "没听到声音，再试一次" :
-      e.error === "not-allowed" ? "请允许使用麦克风" :
-      e.error === "network" ? "语音识别连不上网络（国内建议用 Edge 浏览器）" : "出错了：" + e.error;
+    if (e.error === "no-speech") { $("live").textContent = "没听到声音，再试一次"; return; }
+    if (e.error === "aborted") return;
+    failed = true;
+    if (e.error === "not-allowed") { $("live").textContent = "请允许使用麦克风（或用输入框的输入法语音）"; return; }
+    useKeyboard("语音识别用不了（" + e.error + "）：点上面输入框，用输入法的🎤说话，再点按钮翻译");
   };
-  rec.onend = async () => {
+  rec.onend = () => {
     activeBtn.classList.remove("on"); activeBtn.textContent = activeBtn.dataset.t; rec = null;
-    const text = finalText.trim(); if (!text) return;
+    const text = finalText.trim(); if (!text || failed) return;
     $("live").textContent = "";
-    const d = addMsg(who, text);
-    try {
-      const out = await translate(text, from, to);
-      const dst = d.querySelector(".dst"); dst.textContent = out;
-      dst.onclick = () => speak(out, to);
-      $("log").scrollTop = 1e9;
-      speak(out, to);
-    } catch { d.querySelector(".dst").textContent = "翻译失败，请检查网络"; }
+    doTranslate(who, text, from, to);
   };
-  rec.start();
+  try { rec.start(); }
+  catch { activeBtn.classList.remove("on"); activeBtn.textContent = activeBtn.dataset.t; rec = null; useKeyboard(); }
 }
 $("btnMe").onclick = () => start("me");
 $("btnOther").onclick = () => start("other");
