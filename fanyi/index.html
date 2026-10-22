@@ -19,14 +19,14 @@
   .msg.user { align-self:flex-end; background:var(--user); }
   .msg.ai { align-self:flex-start; background:var(--card); border:1px solid var(--line); cursor:pointer; }
   .hint { margin:auto; text-align:center; color:var(--muted); line-height:1.9; font-size:15px; }
-  #status { text-align:center; color:var(--muted); min-height:22px; font-size:15px; padding:6px 16px; }
-  .center { display:flex; justify-content:center; padding:8px 0 28px; }
-  #orb { width:110px; height:110px; border-radius:50%; border:none; background:var(--accent); color:#fff;
-    font-size:40px; cursor:pointer; box-shadow:0 6px 24px rgba(37,99,235,.35); }
-  #orb.listen { animation:breathe 1.4s infinite; }
-  #orb.think { background:#9ca3af; animation:breathe .5s infinite; }
-  #orb.speak { background:#16a34a; animation:breathe .8s infinite; }
-  @keyframes breathe { 50% { transform:scale(1.08); } }
+  #status { text-align:center; color:var(--muted); min-height:20px; font-size:14px; padding:4px 16px; }
+  .bar { display:flex; gap:8px; align-items:flex-end; padding:8px 12px 16px; border-top:1px solid var(--line); }
+  #txt { flex:1; font-size:16px; padding:10px 12px; border-radius:20px; border:1px solid var(--line); background:var(--card); color:var(--fg); resize:none; font-family:inherit; max-height:120px; }
+  .bar button { width:44px; height:44px; flex:none; border-radius:50%; border:none; font-size:20px; cursor:pointer; color:#fff; background:var(--accent); }
+  #orb.listen { background:#dc2626; animation:breathe 1.2s infinite; }
+  #orb.think { background:#9ca3af; }
+  #orb.speak { background:#16a34a; }
+  @keyframes breathe { 50% { opacity:.6; } }
   #panel { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:flex-end; justify-content:center; }
   #panel.show { display:flex; }
   .sheet { background:var(--card); width:100%; max-width:640px; border-radius:18px 18px 0 0; padding:20px 16px 28px; }
@@ -46,9 +46,13 @@
   <b>AI 语音对话</b>
   <button class="icon" id="setBtn" title="设置">⚙</button>
 </header>
-<div id="log"><div class="hint" id="hint">点下面的圆按钮开始说话<br>说完停一下，AI 会用语音回答<br>回答完会自动继续听你说<br>再点一下按钮结束对话</div></div>
+<div id="log"><div class="hint" id="hint">点 🎤 开始说话，说完停一下<br>AI 会显示文字并读出来<br>也可以直接打字发送</div></div>
 <div id="status"></div>
-<div class="center"><button id="orb">🎤</button></div>
+<div class="bar">
+  <textarea id="txt" rows="1" placeholder="说话或打字…"></textarea>
+  <button id="orb" title="语音对话">🎤</button>
+  <button id="sendBtn" title="发送">➤</button>
+</div>
 
 <div id="panel">
   <div class="sheet">
@@ -117,7 +121,7 @@ $("clearBtn").onclick = () => { stopConversation(""); history = []; store.set("v
 
 const setStatus = t => $("status").textContent = t;
 const orb = $("orb");
-function setOrb(s) { orb.className = s; orb.textContent = { listen:"🎤", think:"…", speak:"🔊" }[s] || "🎤"; }
+function setOrb(s) { orb.className = s; orb.textContent = { listen:"⏹", think:"…", speak:"🔊" }[s] || "🎤"; }
 
 // ---------- 录音，静音 1.2 秒自动判断说完 ----------
 let stream = null, ctx = null, analyser = null, mediaRec = null, active = false, state = "";
@@ -179,9 +183,14 @@ async function handleAudio(blob) {
     const text = ((await (await api("/audio/transcriptions", { method:"POST", body:fd })).json()).text || "").trim();
     if (!active) return;
     if (!text) { listen(); return; }
-    history.push({ role:"user", content:text }); addBubble("user", text);
+    await chat(text);
+  } catch (e) { onErr(e); }
+}
 
-    setStatus("思考中…");
+async function chat(text) {
+  history.push({ role:"user", content:text }); addBubble("user", text);
+  state = "think"; setOrb("think"); setStatus("思考中…");
+  try {
     const r = await api("/chat/completions", {
       method:"POST", headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ model: cfg.model, temperature: 0.7, max_tokens: 400,
@@ -191,14 +200,16 @@ async function handleAudio(blob) {
     reply = reply.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/[*#`>|]/g, "").trim() || "嗯？";
     history.push({ role:"assistant", content:reply }); store.set("voicehist", history);
     addBubble("assistant", reply);
-    if (!active) return;
+    setStatus("");
     await speak(reply);
-    if (active) listen();             // 读完自动继续听
-  } catch (e) {
+    if (active) listen(); else { state = ""; setOrb(""); setStatus(""); }   // 语音对话中：读完自动继续听
+  } catch (e) { onErr(e); }
+}
+
+function onErr(e) {
     console.warn(e);
     stopConversation(/401|403/.test(e.message) ? "API Key 不对，点 ⚙ 检查一下" :
       e.message === "Failed to fetch" ? "连不上 AI 接口，检查网络或接口地址" : "出错了：" + e.message);
-  }
 }
 
 // ---------- 朗读：先用 AI 语音，失败用系统语音 ----------
@@ -226,7 +237,7 @@ function systemSpeak(text) {
   });
 }
 async function speak(text) {
-  state = "speak"; setOrb("speak"); setStatus("AI 在说话…（点按钮打断）");
+  state = "speak"; setOrb("speak"); setStatus("AI 在说话…（点 🔊 打断）");
   try {
     const r = await api("/audio/speech", {
       method:"POST", headers:{ "Content-Type":"application/json" },
@@ -236,7 +247,7 @@ async function speak(text) {
     currentUrl = URL.createObjectURL(await r.blob());
     await playUrl(currentUrl);
   } catch (e) { console.warn("AI 语音失败，用系统朗读", e); await systemSpeak(text); }
-  if (!active) { state = ""; setOrb(""); setStatus(""); }
+  state = ""; setOrb(""); setStatus("");
 }
 function stopAll() { try { player.pause(); } catch {} try { speechSynthesis.cancel(); } catch {} }
 
@@ -248,13 +259,22 @@ function stopConversation(msg) {
 }
 orb.onclick = async () => {
   if (!cfg.key) { openSettings(); return; }
-  if (active && state === "speak") { stopAll(); return; }     // 打断 AI，马上接着听
+  if (state === "speak") { stopAll(); return; }     // 打断 AI，马上接着听
   if (active) { stopConversation("对话已结束"); return; }
   unlockAudio();
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { setStatus("这个浏览器不支持录音，换 Chrome / Edge / Safari 试试"); return; }
   try { await ensureMic(); } catch { setStatus("请允许使用麦克风"); return; }
   active = true; listen();
 };
+async function sendText() {
+  const t = $("txt").value.trim(); if (!t) return;
+  if (!cfg.key) { openSettings(); return; }
+  unlockAudio(); $("txt").value = "";
+  if (active) stopConversation("");
+  await chat(t);
+}
+$("sendBtn").onclick = sendText;
+$("txt").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendText(); } });
 if (!cfg.key) setStatus("先点右上角 ⚙ 填 API Key");
 </script>
 </body>
